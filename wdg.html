@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizard's Garden Quest</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            color: #0f0;
+            overflow: hidden;
+        }
+
+        #startScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        #gameCanvas {
+            border: 3px solid #0f0;
+            display: block;
+            margin: 10px auto;
+            background: #000;
+            image-rendering: pixelated;
+        }
+
+        .retro-input {
+            background: #000;
+            border: 2px solid #0f0;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            padding: 8px;
+            margin: 10px;
+            text-align: center;
+        }
+
+        .retro-button {
+            background: #000;
+            border: 2px solid #0f0;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .retro-button:hover {
+            background: #0f0;
+            color: #000;
+        }
+
+        #gameUI {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #0f0;
+            font-size: 12px;
+            line-height: 1.2;
+            text-shadow: 0 0 3px #0f0;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #0f0;
+            font-size: 10px;
+            text-align: center;
+            text-shadow: 0 0 2px #0f0;
+        }
+
+        #credits {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #ff0;
+            font-size: 8px;
+        }
+
+        #credits a {
+            color: #ff0;
+            text-decoration: none;
+        }
+
+        .title {
+            font-size: 24px;
+            color: #0f0;
+            text-align: center;
+            margin: 20px;
+            text-shadow: 0 0 10px #0f0;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #ff0;
+            text-align: center;
+            margin: 10px;
+        }
+
+        #gameOver {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #000;
+            border: 3px solid #0f0;
+            padding: 20px;
+            text-align: center;
+            display: none;
+            z-index: 500;
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <div class="title">🧙 WIZARD'S GARDEN QUEST 🌿</div>
+        <div class="subtitle">A Classic 8-Bit Adventure</div>
+        <br>
+        <div>Enter your wizard name:</div>
+        <input type="text" id="usernameInput" class="retro-input" placeholder="GANDALF" maxlength="10">
+        <br>
+        <button class="retro-button" onclick="startGame()">BEGIN QUEST</button>
+        <br><br>
+        <div style="font-size: 10px; color: #888;">
+            Navigate the enchanted garden maze<br>
+            Collect magical herbs and avoid monsters<br>
+            Use your wizard powers to survive!
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="640" height="480" style="display: none;"></canvas>
+
+    <div id="gameUI" style="display: none;">
+        <div>WIZARD: <span id="playerName">PLAYER</span></div>
+        <div>SCORE: <span id="score">0000</span></div>
+        <div>LEVEL: <span id="level">01</span></div>
+        <div>LIVES: <span id="lives">03</span></div>
+        <div>MAGIC: <span id="magic">██████████</span></div>
+        <div>HERBS: <span id="herbs">00</span></div>
+    </div>
+
+    <div id="controls" style="display: none;">
+        ▲▼◄► MOVE • SPACE CAST SPELL • COLLECT ALL HERBS TO ADVANCE
+    </div>
+
+    <div id="credits">
+        Made by <a href="https://github.com/ngiotsas" target="_blank">Ngiotsas</a>
+    </div>
+
+    <div id="gameOver">
+        <h2>QUEST COMPLETE</h2>
+        <p>WIZARD: <span id="finalName"></span></p>
+        <p>FINAL SCORE: <span id="finalScore">0000</span></p>
+        <p>LEVEL REACHED: <span id="finalLevel">01</span></p>
+        <button class="retro-button" onclick="restartGame()">NEW QUEST</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const TILE_SIZE = 16;
+        const MAZE_WIDTH = 40;
+        const MAZE_HEIGHT = 30;
+        
+        let gameState = {
+            playerName: '',
+            wizard: {
+                x: 2,
+                y: 2,
+                direction: 0, // 0=up, 1=right, 2=down, 3=left
+                animFrame: 0,
+                isMoving: false
+            },
+            monsters: [],
+            spells: [],
+            herbs: [],
+            particles: [],
+            garden: [],
+            score: 0,
+            level: 1,
+            lives: 3,
+            magic: 100,
+            herbsCollected: 0,
+            totalHerbs: 0,
+            gameRunning: false,
+            keys: {},
+            lastSpell: 0,
+            gameFrame: 0
+        };
+
+        // Generate garden maze with hedges
+        function generateGarden() {
+            const garden = Array(MAZE_HEIGHT).fill().map(() => Array(MAZE_WIDTH).fill(0));
+            
+            // Create hedge borders
+            for (let x = 0; x < MAZE_WIDTH; x++) {
+                garden[0][x] = 1; // top
+                garden[MAZE_HEIGHT-1][x] = 1; // bottom
+            }
+            for (let y = 0; y < MAZE_HEIGHT; y++) {
+                garden[y][0] = 1; // left
+                garden[y][MAZE_WIDTH-1] = 1; // right
+            }
+            
+            // Create internal hedge maze
+            for (let y = 2; y < MAZE_HEIGHT-2; y += 2) {
+                for (let x = 2; x < MAZE_WIDTH-2; x += 2) {
+                    garden[y][x] = 1;
+                    
+                    // Add random hedge extensions
+                    const dirs = [[0,-1], [1,0], [0,1], [-1,0]];
+                    const dir = dirs[Math.floor(Math.random() * 4)];
+                    const nx = x + dir[0];
+                    const ny = y + dir[1];
+                    if (nx > 0 && nx < MAZE_WIDTH-1 && ny > 0 && ny < MAZE_HEIGHT-1) {
+                        garden[ny][nx] = 1;
+                    }
+                }
+            }
+            
+            // Create some openings for better gameplay
+            for (let i = 0; i < 15; i++) {
+                const x = Math.floor(Math.random() * (MAZE_WIDTH-2)) + 1;
+                const y = Math.floor(Math.random() * (MAZE_HEIGHT-2)) + 1;
+                if (Math.random() < 0.4) garden[y][x] = 0;
+            }
+            
+            return garden;
+        }
+
+        // Place magical herbs
+        function placeHerbs() {
+            gameState.herbs = [];
+            const herbCount = 8 + gameState.level * 2;
+            let placed = 0;
+            
+            while (placed < herbCount) {
+                const x = Math.floor(Math.random() * (MAZE_WIDTH-2)) + 1;
+                const y = Math.floor(Math.random() * (MAZE_HEIGHT-2)) + 1;
+                
+                if (gameState.garden[y][x] === 0 && !(x < 4 && y < 4)) {
+                    gameState.herbs.push({
+                        x: x,
+                        y: y,
+                        type: ['redFlower', 'blueFlower', 'mushroom'][Math.floor(Math.random() * 3)],
+                        collected: false,
+                        glow: Math.random() * Math.PI * 2
+                    });
+                    placed++;
+                }
+            }
+            
+            gameState.totalHerbs = herbCount;
+            gameState.herbsCollected = 0;
+        }
+
+        // Place garden monsters
+        function placeMonsters() {
+            gameState.monsters = [];
+            const monsterCount = Math.min(3 + Math.floor(gameState.level / 2), 8);
+            
+            for (let i = 0; i < monsterCount; i++) {
+                let x, y;
+                do {
+                    x = Math.floor(Math.random() * (MAZE_WIDTH-2)) + 1;
+                    y = Math.floor(Math.random() * (MAZE_HEIGHT-2)) + 1;
+                } while (gameState.garden[y][x] === 1 || (x < 6 && y < 6));
+                
+                gameState.monsters.push({
+                    x: x,
+                    y: y,
+                    type: ['spider', 'snake', 'bat'][i % 3],
+                    direction: Math.floor(Math.random() * 4),
+                    moveTimer: 0,
+                    animFrame: 0
+                });
+            }
+        }
+
+        function startGame() {
+            const username = document.getElementById('usernameInput').value.trim().toUpperCase();
+            gameState.playerName = username || 'WIZARD';
+            
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameCanvas').style.display = 'block';
+            document.getElementById('gameUI').style.display = 'block';
+            document.getElementById('controls').style.display = 'block';
+            document.getElementById('playerName').textContent = gameState.playerName;
+            
+            initLevel();
+            gameState.gameRunning = true;
+            gameLoop();
+        }
+
+        function initLevel() {
+            gameState.garden = generateGarden();
+            gameState.wizard.x = 2;
+            gameState.wizard.y = 2;
+            gameState.spells = [];
+            placeHerbs();
+            placeMonsters();
+        }
+
+        // Input handling - only move on keydown, no continuous movement
+        document.addEventListener('keydown', (e) => {
+            if (!gameState.gameRunning) return;
+            
+            // Only process if key wasn't already pressed (prevents auto-repeat)
+            if (gameState.keys[e.code]) return;
+            gameState.keys[e.code] = true;
+            
+            let newX = gameState.wizard.x;
+            let newY = gameState.wizard.y;
+            let moved = false;
+            
+            switch(e.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    newY--;
+                    gameState.wizard.direction = 0;
+                    moved = true;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    newX++;
+                    gameState.wizard.direction = 1;
+                    moved = true;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    newY++;
+                    gameState.wizard.direction = 2;
+                    moved = true;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    newX--;
+                    gameState.wizard.direction = 3;
+                    moved = true;
+                    break;
+                case 'Space':
+                    castSpell();
+                    e.preventDefault();
+                    break;
+            }
+            
+            // Only move if valid position
+            if (moved && newX >= 0 && newX < MAZE_WIDTH && newY >= 0 && newY < MAZE_HEIGHT && 
+                gameState.garden[newY][newX] === 0) {
+                gameState.wizard.x = newX;
+                gameState.wizard.y = newY;
+                gameState.wizard.isMoving = true;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            gameState.keys[e.code] = false;
+        });
+
+        function castSpell() {
+            const now = Date.now();
+            if (now - gameState.lastSpell < 400 || gameState.magic < 20) return;
+            
+            const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+            const [dx, dy] = dirs[gameState.wizard.direction];
+            
+            gameState.spells.push({
+                x: gameState.wizard.x + dx * 0.3, // Start slightly offset
+                y: gameState.wizard.y + dy * 0.3,
+                dx: dx,
+                dy: dy,
+                life: 20, // Longer spell life
+                type: 'magic'
+            });
+            
+            gameState.magic -= 20;
+            gameState.lastSpell = now;
+        }
+
+        function update() {
+            if (!gameState.gameRunning) return;
+            
+            gameState.gameFrame++;
+            
+            // Regenerate magic
+            if (gameState.magic < 100) {
+                gameState.magic += 0.8;
+            }
+            
+            // Update wizard animation
+            if (gameState.wizard.isMoving) {
+                gameState.wizard.animFrame++;
+                if (gameState.wizard.animFrame > 8) {
+                    gameState.wizard.isMoving = false;
+                    gameState.wizard.animFrame = 0;
+                }
+            }
+            
+            // Update spells
+            gameState.spells.forEach((spell, index) => {
+                spell.x += spell.dx * 0.5; // Slower spell movement
+                spell.y += spell.dy * 0.5;
+                spell.life--;
+                
+                const spellTileX = Math.floor(spell.x);
+                const spellTileY = Math.floor(spell.y);
+                
+                if (spell.life <= 0 || spellTileX < 0 || spellTileX >= MAZE_WIDTH || 
+                    spellTileY < 0 || spellTileY >= MAZE_HEIGHT || 
+                    gameState.garden[spellTileY] && gameState.garden[spellTileY][spellTileX] === 1) {
+                    gameState.spells.splice(index, 1);
+                    return;
+                }
+                
+                // Check spell hits monster
+                gameState.monsters.forEach((monster, mIndex) => {
+                    if (spellTileX === monster.x && spellTileY === monster.y) {
+                        gameState.score += 150;
+                        createParticles(monster.x * TILE_SIZE + 8, monster.y * TILE_SIZE + 8);
+                        gameState.monsters.splice(mIndex, 1);
+                        gameState.spells.splice(index, 1);
+                    }
+                });
+            });
+            
+            // Update monsters with simple AI
+            gameState.monsters.forEach((monster, monsterIndex) => {
+                monster.moveTimer++;
+                monster.animFrame++;
+                
+                if (monster.moveTimer > 45) { // Slower monster movement
+                    monster.moveTimer = 0;
+                    
+                    // Simple chase behavior with some randomness
+                    const dx = gameState.wizard.x - monster.x;
+                    const dy = gameState.wizard.y - monster.y;
+                    
+                    let nextX = monster.x;
+                    let nextY = monster.y;
+                    
+                    // 70% chance to chase, 30% random movement
+                    if (Math.random() < 0.7) {
+                        if (Math.abs(dx) > Math.abs(dy)) {
+                            nextX += dx > 0 ? 1 : -1;
+                        } else {
+                            nextY += dy > 0 ? 1 : -1;
+                        }
+                    } else {
+                        // Random movement
+                        const dirs = [[0,-1], [1,0], [0,1], [-1,0]];
+                        const randomDir = dirs[Math.floor(Math.random() * 4)];
+                        nextX += randomDir[0];
+                        nextY += randomDir[1];
+                    }
+                    
+                    // Check if move is valid
+                    if (nextX >= 0 && nextX < MAZE_WIDTH && nextY >= 0 && nextY < MAZE_HEIGHT && 
+                        gameState.garden[nextY] && gameState.garden[nextY][nextX] === 0) {
+                        monster.x = nextX;
+                        monster.y = nextY;
+                    }
+                }
+                
+                // Check monster collision with wizard
+                if (monster.x === gameState.wizard.x && monster.y === gameState.wizard.y) {
+                    gameState.lives--;
+                    createParticles(gameState.wizard.x * TILE_SIZE + 8, gameState.wizard.y * TILE_SIZE + 8);
+                    
+                    if (gameState.lives <= 0) {
+                        gameOver();
+                        return;
+                    } else {
+                        // Reset wizard position and give brief invincibility
+                        gameState.wizard.x = 2;
+                        gameState.wizard.y = 2;
+                        
+                        // Remove the monster that hit the wizard
+                        gameState.monsters.splice(monsterIndex, 1);
+                    }
+                }
+            });
+            
+            // Check herb collection
+            gameState.herbs.forEach((herb, index) => {
+                if (!herb.collected && herb.x === gameState.wizard.x && herb.y === gameState.wizard.y) {
+                    herb.collected = true;
+                    gameState.herbsCollected++;
+                    gameState.score += 50;
+                    createParticles(herb.x * TILE_SIZE + 8, herb.y * TILE_SIZE + 8);
+                    
+                    if (gameState.herbsCollected >= gameState.totalHerbs) {
+                        nextLevel();
+                    }
+                }
+                herb.glow += 0.1;
+            });
+            
+            updateUI();
+        }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 6; i++) {
+                gameState.particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 20
+                });
+            }
+        }
+
+        function nextLevel() {
+            gameState.level++;
+            gameState.score += 1000;
+            gameState.magic = 100;
+            initLevel();
+        }
+
+        function render() {
+            // Clear screen
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw garden paths (green)
+            ctx.fillStyle = '#004000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw hedge walls
+            ctx.fillStyle = '#008000';
+            for (let y = 0; y < MAZE_HEIGHT; y++) {
+                for (let x = 0; x < MAZE_WIDTH; x++) {
+                    if (gameState.garden[y][x] === 1) {
+                        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        
+                        // Add hedge texture
+                        ctx.fillStyle = '#00a000';
+                        ctx.fillRect(x * TILE_SIZE + 2, y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.fillStyle = '#008000';
+                    }
+                }
+            }
+            
+            // Draw herbs
+            gameState.herbs.forEach(herb => {
+                if (!herb.collected) {
+                    const glow = Math.sin(herb.glow) * 0.3 + 0.7;
+                    ctx.save();
+                    ctx.globalAlpha = glow;
+                    
+                    const x = herb.x * TILE_SIZE + 4;
+                    const y = herb.y * TILE_SIZE + 4;
+                    
+                    if (herb.type === 'redFlower') {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.fillRect(x, y, 8, 8);
+                        ctx.fillStyle = '#ff8080';
+                        ctx.fillRect(x+2, y+2, 4, 4);
+                    } else if (herb.type === 'blueFlower') {
+                        ctx.fillStyle = '#0080ff';
+                        ctx.fillRect(x, y, 8, 8);
+                        ctx.fillStyle = '#80c0ff';
+                        ctx.fillRect(x+2, y+2, 4, 4);
+                    } else {
+                        ctx.fillStyle = '#800080';
+                        ctx.fillRect(x, y, 8, 8);
+                        ctx.fillStyle = '#ff00ff';
+                        ctx.fillRect(x+3, y+1, 2, 6);
+                    }
+                    
+                    ctx.restore();
+                }
+            });
+            
+            // Draw wizard
+            const wizX = gameState.wizard.x * TILE_SIZE;
+            const wizY = gameState.wizard.y * TILE_SIZE;
+            
+            // Wizard robe (blue)
+            ctx.fillStyle = '#0000ff';
+            ctx.fillRect(wizX + 2, wizY + 4, 12, 12);
+            
+            // Wizard hat (dark blue)
+            ctx.fillStyle = '#000080';
+            ctx.fillRect(wizX + 4, wizY, 8, 8);
+            ctx.fillRect(wizX + 6, wizY - 2, 4, 4);
+            
+            // Wizard face (yellow)
+            ctx.fillStyle = '#ffff80';
+            ctx.fillRect(wizX + 6, wizY + 6, 4, 4);
+            
+            // Wizard staff
+            ctx.fillStyle = '#804020';
+            switch(gameState.wizard.direction) {
+                case 0: ctx.fillRect(wizX + 12, wizY + 2, 2, 8); break; // up
+                case 1: ctx.fillRect(wizX + 8, wizY, 8, 2); break; // right
+                case 2: ctx.fillRect(wizX + 2, wizY + 6, 2, 8); break; // down
+                case 3: ctx.fillRect(wizX, wizY + 8, 8, 2); break; // left
+            }
+            
+            // Staff orb
+            ctx.fillStyle = '#ff00ff';
+            switch(gameState.wizard.direction) {
+                case 0: ctx.fillRect(wizX + 11, wizY + 1, 4, 4); break;
+                case 1: ctx.fillRect(wizX + 13, wizY - 1, 4, 4); break;
+                case 2: ctx.fillRect(wizX + 1, wizY + 11, 4, 4); break;
+                case 3: ctx.fillRect(wizX - 1, wizY + 7, 4, 4); break;
+            }
+            
+            // Draw wizard nametag above character using SVG-style approach
+            const nametagY = wizY - 16;
+            const nametagX = wizX + 8;
+            
+            // Create SVG-like nametag background
+            ctx.fillStyle = '#000080'; // Dark blue background
+            ctx.strokeStyle = '#ffff00'; // Yellow border
+            ctx.lineWidth = 1;
+            
+            // Measure text to size the nametag properly
+            ctx.font = '8px Courier New';
+            ctx.textAlign = 'center';
+            const textWidth = ctx.measureText(gameState.playerName).width;
+            const tagWidth = textWidth + 8;
+            const tagHeight = 12;
+            
+            // Draw nametag background rectangle
+            ctx.fillRect(nametagX - tagWidth/2, nametagY - tagHeight/2, tagWidth, tagHeight);
+            ctx.strokeRect(nametagX - tagWidth/2, nametagY - tagHeight/2, tagWidth, tagHeight);
+            
+            // Add small pointer/arrow pointing down to wizard
+            ctx.beginPath();
+            ctx.moveTo(nametagX - 3, nametagY + tagHeight/2);
+            ctx.lineTo(nametagX, nametagY + tagHeight/2 + 3);
+            ctx.lineTo(nametagX + 3, nametagY + tagHeight/2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Draw the wizard name text
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 8px Courier New';
+            ctx.fillText(gameState.playerName, nametagX, nametagY + 2);
+            
+            // Draw monsters
+            gameState.monsters.forEach(monster => {
+                const monX = monster.x * TILE_SIZE;
+                const monY = monster.y * TILE_SIZE;
+                
+                if (monster.type === 'spider') {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(monX + 4, monY + 4, 8, 8);
+                    // Spider legs
+                    ctx.fillRect(monX + 2, monY + 6, 12, 2);
+                    ctx.fillRect(monX + 2, monY + 8, 12, 2);
+                } else if (monster.type === 'snake') {
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillRect(monX + 2, monY + 6, 12, 4);
+                    ctx.fillRect(monX + 10, monY + 4, 4, 8);
+                } else { // bat
+                    ctx.fillStyle = '#800080';
+                    ctx.fillRect(monX + 6, monY + 6, 4, 4);
+                    if (Math.floor(monster.animFrame / 10) % 2) {
+                        ctx.fillRect(monX + 2, monY + 4, 12, 2);
+                    }
+                }
+            });
+            
+            // Draw spells
+            ctx.fillStyle = '#ffff00';
+            gameState.spells.forEach(spell => {
+                const spellX = Math.floor(spell.x * TILE_SIZE) + 6;
+                const spellY = Math.floor(spell.y * TILE_SIZE) + 6;
+                ctx.fillRect(spellX, spellY, 4, 4);
+                
+                // Spell trail
+                ctx.fillStyle = '#ffff80';
+                ctx.fillRect(spellX + 1, spellY + 1, 2, 2);
+                ctx.fillStyle = '#ffff00';
+            });
+            
+            // Draw particles
+            ctx.fillStyle = '#ffffff';
+            gameState.particles.forEach((particle, index) => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life--;
+                
+                if (particle.life > 0) {
+                    ctx.fillRect(Math.floor(particle.x), Math.floor(particle.y), 2, 2);
+                } else {
+                    gameState.particles.splice(index, 1);
+                }
+            });
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = String(gameState.score).padStart(4, '0');
+            document.getElementById('level').textContent = String(gameState.level).padStart(2, '0');
+            document.getElementById('lives').textContent = String(gameState.lives).padStart(2, '0');
+            document.getElementById('herbs').textContent = String(gameState.herbsCollected).padStart(2, '0');
+            
+            // Magic bar
+            const magicBars = Math.floor(gameState.magic / 10);
+            document.getElementById('magic').textContent = '█'.repeat(magicBars) + '░'.repeat(10 - magicBars);
+        }
+
+        function gameOver() {
+            gameState.gameRunning = false;
+            document.getElementById('finalName').textContent = gameState.playerName;
+            document.getElementById('finalScore').textContent = String(gameState.score).padStart(4, '0');
+            document.getElementById('finalLevel').textContent = String(gameState.level).padStart(2, '0');
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        function restartGame() {
+            location.reload();
+        }
+
+        function gameLoop() {
+            if (gameState.gameRunning) {
+                update();
+                render();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+    </script>
+</body>
+</html>
